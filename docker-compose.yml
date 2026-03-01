@@ -1,6 +1,6 @@
 services:
-  gb-ollama-server:
-    image: mirror.gcr.io/ollama/ollama:latest
+  server:
+    build: .
     container_name: ollama
     restart: unless-stopped
     ports:
@@ -15,7 +15,7 @@ services:
               count: all
               capabilities: [gpu]
 
-  open-webui:
+  web:
     image: ghcr.io/open-webui/open-webui:main
     container_name: open-webui
     restart: unless-stopped
@@ -26,7 +26,24 @@ services:
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
-      - gb-ollama-server
+      - server
+
+  openhands:
+    image: docker.all-hands.dev/all-hands-ai/openhands:latest
+    container_name: openhands
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - openhands_data:/app/data
+    environment:
+      - LLM_BASE_URL=http://ollama:11434
+      - LLM_API_KEY=ollama
+      - LLM_MODEL=ollama/devstral:latest
+      - OLLAMA_CONTEXT_LENGTH=32768
+    depends_on:
+      - server
 
 volumes:
   ollama_data:
