@@ -29,19 +29,25 @@ services:
       - server
 
   openhands:
-    image: docker.all-hands.dev/all-hands-ai/openhands:latest
+    image: ghcr.io/openhands/openhands:latest
     container_name: openhands
     restart: unless-stopped
     ports:
       - "3001:3000"
+      - "41234:41234"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - openhands_data:/app/data
+      - /run/user/1000/podman/podman.sock:/var/run/docker.sock
+      - openhands_data:/.openhands
     environment:
+      - SANDBOX_VSCODE_PORT=41234
+      - AGENT_SERVER_IMAGE_REPOSITORY=ghcr.io/openhands/agent-server
       - LLM_BASE_URL=http://ollama:11434
       - LLM_API_KEY=ollama
-      - LLM_MODEL=ollama/devstral:latest
+      - LLM_MODEL=ollama/eda-architecture-pro:latest
       - OLLAMA_CONTEXT_LENGTH=32768
+      - OH_SECRET_KEY=ollama
+    extra_hosts:
+      - host.docker.internal:host-gateway
     depends_on:
       - server
 
@@ -49,4 +55,6 @@ volumes:
   ollama_data:
     driver: local
   open_webui_data:
+    driver: local
+  openhands_data:
     driver: local
