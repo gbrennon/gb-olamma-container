@@ -1,0 +1,31 @@
+LANGUAGE: Scala
+
+TYPE SAFETY
+Avoid primitive obsession. Wrap domain concepts in opaque types or value classes (e.g., case class OrderId(value: UUID) extends AnyVal).
+Use sealed traits and case classes/objects to model closed domain hierarchies.
+Make illegal states unrepresentable through the type system. Prefer Option over null everywhere.
+Use refined types or smart constructors that return Either[ValidationError, A] for validated value objects.
+
+FUNCTIONAL STYLE AND COMPOSITION
+Prefer immutable data structures. Use val over var. Model mutations as data transformations.
+Define ports as traits. Implement adapters as classes that inject dependencies through constructors.
+Use type classes (implicit/given instances) for cross-cutting behavior rather than inheritance.
+Compose effects using a consistent effect type: ZIO, cats-effect IO, or Future (choose one per project, do not mix).
+Apply the tagless final pattern or ZIO environment to inject dependencies without coupling to concrete implementations.
+
+ERROR HANDLING
+Never throw exceptions in domain or application logic.
+Model errors as typed values: Either[DomainError, A] or the error channel of your effect type.
+Use sealed trait hierarchies for domain errors to enable exhaustive pattern matching.
+Reserve exceptions for truly unrecoverable, programmer-error scenarios only.
+
+CONCURRENCY
+Use the project's chosen effect system (ZIO or cats-effect) for all async and concurrent work.
+Never use raw Future with global ExecutionContext in new code.
+Protect shared state with Ref (ZIO) or Ref from cats-effect. Prefer message passing via queues over shared mutable state.
+
+TESTING
+Unit tests for domain and application: use ZIO Test, ScalaTest, or MUnit with mocked ports (manual implementations or mockito-scala).
+Integration tests for infrastructure: use testcontainers-scala for real databases and brokers. No mocking of infrastructure.
+Name tests as sentences: "should reject an order when inventory is insufficient".
+Organize tests to mirror the source layer structure.

@@ -1,0 +1,59 @@
+LANGUAGE: Bash / Zsh shell scripting
+
+ENVIRONMENT
+Target shell: bash 5+ or zsh 5.9+. Always declare the interpreter explicitly on line 1.
+Use #!/usr/bin/env bash for portability across systems.
+Use #!/usr/bin/env zsh only when zsh-specific features are intentionally required.
+Assume Fedora Linux as the primary execution environment.
+
+SAFETY AND CORRECTNESS
+Every script must begin with: set -euo pipefail
+-e: exit immediately on unhandled error.
+-u: treat unset variables as errors.
+-o pipefail: propagate errors through pipelines, not just the last command.
+Never use set +e to suppress errors in production paths. If a command may fail expectedly, handle it explicitly with || or an if block.
+Always quote variable expansions: "$var", "${array[@]}", "$@". Unquoted expansions are a bug.
+Never use ls to iterate files. Use globs or find.
+
+FUNCTIONS AND STRUCTURE
+Define helper functions before use. Keep functions small and single-purpose (SRP applies here too).
+Use local for all variables inside functions. Prevent accidental global state mutation.
+Use named variables instead of positional parameters ($1, $2) beyond trivial cases:
+  local input_file="$1"
+  local output_dir="$2"
+Use meaningful names. Avoid single-letter variables outside of loop counters.
+
+ERROR HANDLING
+Never silently swallow errors. Use explicit error handling:
+  command || { echo "ERROR: command failed" >&2; exit 1; }
+Always write error messages to stderr: echo "..." >&2
+Use a consistent logging pattern across scripts (info, warn, error functions).
+Validate all required inputs at the start of the script before doing any work.
+Check for required commands with command -v before using them.
+
+PORTABILITY AND DEPENDENCIES
+Prefer POSIX-compatible constructs when the script may run in multiple environments.
+Avoid bashisms when targeting /bin/sh. If you need bash features, use #!/usr/bin/env bash.
+Declare external tool dependencies explicitly at the top of the script as a preflight check.
+Avoid hardcoded absolute paths. Use variables or command substitution ($(command -v tool)).
+
+SECURITY
+Never use eval unless absolutely unavoidable and the input is fully controlled.
+Never construct commands by concatenating unsanitized user input.
+Use mktemp for temporary files. Never use predictable paths in /tmp.
+Clean up temporary files in a trap EXIT handler.
+Avoid storing secrets in variables that may appear in process listings. Use files with restricted permissions or read from a secrets manager.
+
+TESTING AND VALIDATION
+Use shellcheck (shellcheck script.sh) as the mandatory linter. Zero warnings in CI.
+Use bats-core (Bash Automated Testing System) for unit and integration tests of shell scripts.
+Structure bats tests with descriptive @test names: @test "should exit 1 when required argument is missing"
+Test scripts in isolation using a dedicated test fixtures directory.
+Run shellcheck and bats in CI on every push that touches shell files.
+
+STYLE
+Use 2-space indentation.
+Align related variable assignments for readability only when it does not obscure intent.
+Add a usage() function to every script that accepts arguments. Call it on -h or missing required args.
+Separate logical sections with a comment block:
+  # ── Section Name ─────────────────────────────────────────────────────────────

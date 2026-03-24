@@ -1,0 +1,31 @@
+LANGUAGE: TypeScript
+
+TYPE SAFETY
+Enable strict mode in tsconfig.json. No exceptions.
+Avoid primitive obsession. Use branded types or opaque type aliases for domain identifiers (e.g., type OrderId = string & { readonly _brand: "OrderId" }).
+Use discriminated unions to model domain variants. Leverage exhaustive pattern matching with switch or match libraries.
+Never use any. Use unknown for truly unknown input and narrow it explicitly before use.
+Use readonly on all domain object properties. Domain objects are immutable.
+
+ABSTRACTIONS AND COMPOSITION
+Define ports as TypeScript interfaces. Keep them small and role-specific.
+Implement adapters as classes that receive ports through constructor injection.
+Use a DI container (InversifyJS, tsyringe, or a manual composition root) to wire dependencies. Never use new ConcreteService() inside domain or application code.
+Prefer interface-based design over class inheritance hierarchies. Compose behavior through interface implementation and delegation.
+
+ERROR HANDLING
+Never throw plain Error objects in domain or application logic.
+Model errors as typed Result types (use neverthrow, true-myth, or a lightweight custom Result<T, E>).
+Reserve thrown exceptions for truly unrecoverable infrastructure failures at the boundary.
+Always handle Promise rejections explicitly. No unhandled promise rejections.
+
+ASYNC
+Use async/await consistently. Never mix callbacks with async/await in the same flow.
+Handle errors in async functions with explicit try/catch at the adapter boundary, not inside domain logic.
+Avoid implicit floating promises. Every Promise must be awaited or explicitly discarded with void.
+
+TESTING
+Unit tests for domain and application: use Jest or Vitest with manual interface mocks or jest.fn() stubs for all ports.
+Integration tests for infrastructure: use testcontainers-node with real databases and brokers. No mocking of infrastructure.
+Name tests descriptively: "should throw InsufficientStockError when requested quantity exceeds available stock".
+Separate test files by layer. Do not mix domain unit tests with integration tests.

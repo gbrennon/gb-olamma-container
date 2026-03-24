@@ -1,0 +1,69 @@
+LANGUAGE: GitHub Actions / Forgejo Actions YAML workflows
+
+ENVIRONMENT
+Target platforms: GitHub Actions and Forgejo Actions (Gitea-compatible runner).
+Assume workflows are linted with actionlint and yamllint on every push.
+Assume security scanning with zizmor is part of CI.
+All YAML must pass yamllint with no warnings and actionlint with no errors before merge.
+
+STRUCTURE AND NAMING
+Use one workflow file per distinct concern: ci.yml, release.yml, deploy-docs.yml, lint.yml.
+Never put unrelated jobs in the same workflow file.
+Name jobs and steps clearly using kebab-case for job ids and plain English for step names.
+Always declare name at the top of every workflow file.
+Group related steps within a job. Do not mix build, test, and deploy logic in one job unless they are genuinely sequential and inseparable.
+
+TRIGGERS
+Declare on triggers explicitly and minimally. Only trigger what the workflow actually needs.
+Use paths filters on push and pull_request triggers when workflows are only relevant to specific file trees.
+Use workflow_dispatch for all workflows that may need manual execution in production.
+Never use on: push without branch or paths filtering in a multi-workflow repository.
+
+SECRETS AND ENVIRONMENT
+Never hardcode secrets, tokens, or credentials in workflow files.
+Always access secrets via ${{ secrets.SECRET_NAME }}.
+Declare environment-scoped secrets at the job level using the environment key when the workflow targets a specific deployment environment. This gates secret access to that environment's approval rules.
+Do not use env at the workflow level for secrets. Limit secret scope to the job or step that needs it.
+Use vars context (${{ vars.VAR_NAME }}) for non-sensitive configuration that varies by environment.
+
+PERMISSIONS
+Always declare permissions explicitly at the workflow or job level.
+Use the principle of least privilege: grant only the permissions the job actually needs.
+Default to permissions: read-all at the workflow level and override per job as needed.
+Never use permissions: write-all.
+
+ACTIONS AND VERSIONS
+Prefer official marketplace actions over manually scripted equivalents (uses: actions/checkout@v4 over manual git clone).
+Always pin actions to a specific major version tag (actions/checkout@v4), never to a branch (actions/checkout@main) and never unpinned.
+Use SHA pinning only when a security policy explicitly requires it. Plain version tags are preferred for readability and maintainability.
+Audit third-party actions before adoption. Prefer actions from verified publishers.
+
+REUSABILITY AND DRY
+Extract repeated job logic into reusable workflows (workflow_call trigger) or composite actions.
+Store composite actions under .github/actions/<action-name>/action.yml.
+Pass parameters explicitly. Do not rely on ambient environment variables across reusable workflow boundaries.
+Never copy-paste job blocks across workflow files. If the same job appears twice, it belongs in a reusable workflow.
+
+RUNNER AND ENVIRONMENT CONSISTENCY
+Pin runner versions explicitly: ubuntu-24.04 not ubuntu-latest. Floating labels break reproducibility.
+For Forgejo runners, ensure the runner label matches the registered runner exactly.
+Use container jobs for language-specific toolchains when the host runner image cannot be controlled.
+
+DRIFT PREVENTION
+The prompts/lang-actions.txt file is the canonical standard for all workflow authoring.
+Any workflow change must be reviewed against this standard.
+Run actionlint, yamllint, and zizmor as the first job in every CI pipeline (a lint-workflows job).
+If a workflow is copy-pasted from another repo, it must be reviewed and normalized before merge.
+Maintain a lint-workflows job in ci.yml that runs on all .github/workflows/*.yml and .forgejo/workflows/*.yml changes.
+
+ERROR HANDLING
+Always set continue-on-error: false (the default) unless there is an explicit documented reason.
+Use if: always() on cleanup and notification steps that must run regardless of prior step status.
+Use timeout-minutes on every job to prevent runaway workflows from consuming runner minutes indefinitely.
+
+STYLE
+Use 2-space indentation throughout.
+No inline comments within YAML values (these cause yamllint and parser issues).
+No trailing whitespace.
+No emojis in step names or job names.
+Blank line between each top-level key (on, jobs, env, permissions).

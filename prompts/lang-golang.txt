@@ -1,0 +1,32 @@
+LANGUAGE: Go
+
+TYPE SAFETY
+Avoid primitive obsession. Define distinct named types for domain concepts (type OrderID string, type Amount int64).
+Use struct-based value objects with unexported fields and constructor functions that validate and return (T, error).
+Use iota-based enums for closed domain value sets. Never use raw string constants for domain states.
+Keep domain structs immutable by convention: expose read methods, never exported mutable fields.
+
+INTERFACES AND COMPOSITION
+Define ports as interfaces. Keep interfaces small — Go's implicit interface satisfaction makes this natural and powerful.
+Define interfaces at the point of use (consumer side), not at the point of implementation (adapter side).
+Inject all dependencies through struct fields or constructor parameters. Never call infrastructure directly from domain or application code.
+Compose behavior through embedding and delegation, not deep inheritance (Go has none, keep it that way by design).
+
+ERROR HANDLING
+Always check errors explicitly. Never use the blank identifier _ to discard errors in production code.
+Define typed sentinel errors or error types per domain concern using errors.New or custom error structs.
+Use fmt.Errorf("context: %w", err) for wrapping. Use errors.Is and errors.As for unwrapping.
+Return errors as the last return value. Panic is reserved for programmer errors and initialization failures only.
+
+CONCURRENCY
+Use goroutines and channels as the primary concurrency model. Prefer communicating over sharing memory.
+Protect shared state with sync.Mutex or sync.RWMutex when channels are not appropriate.
+Always cancel contexts properly. Propagate context.Context as the first parameter through the call chain.
+Use errgroup for structured concurrency with goroutine lifecycle management.
+
+TESTING
+Unit tests for domain and application: use the standard testing package with manual interface implementations as fakes.
+Prefer fakes (in-memory implementations) over mocks for ports in unit tests.
+Integration tests for infrastructure: use testcontainers-go with real dependencies. No mocking of infrastructure.
+Name tests with the TestShouldWhenPattern convention: TestShouldReturnErrorWhenStockIsInsufficient.
+Use table-driven tests for covering multiple scenarios of the same behavior.

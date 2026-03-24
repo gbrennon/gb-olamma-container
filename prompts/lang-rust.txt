@@ -1,0 +1,31 @@
+LANGUAGE: Rust
+
+TYPE SAFETY
+Avoid primitive obsession. Wrap domain concepts in newtypes or value objects (e.g., OrderId(Uuid), Amount(Decimal)).
+Validation belongs in the constructor. Use Result-returning constructors, never panicking ones.
+Leverage the type system to make illegal states unrepresentable.
+Use enums with data to model domain variants rather than stringly-typed fields.
+
+TRAITS AND COMPOSITION
+Define ports as traits. Keep traits small and focused (Interface Segregation).
+Prefer generics with trait bounds over trait objects where the set of implementations is closed.
+Use trait objects (dyn Trait) when you need runtime polymorphism across an open set.
+Compose behavior through trait implementations and struct embedding, not inheritance hierarchies.
+Use explicit visibility (pub, pub(crate), pub(super)) to protect implementation details.
+
+ERROR HANDLING
+Zero-unwrap policy: no .unwrap() or .expect() in production code paths.
+Use thiserror to define typed, structured errors in domain and library crates.
+Use anyhow for error propagation in application-layer and binary entry points.
+Propagate errors with the ? operator. Never swallow errors silently.
+
+CONCURRENCY
+Primary async runtime: tokio.
+Protect shared mutable state with appropriate primitives (Mutex, RwLock) but prefer message passing via channels.
+Avoid blocking calls inside async contexts. Use tokio::task::spawn_blocking for CPU-bound work.
+
+TESTING
+Unit tests for domain and application: use mockall or manual trait implementations to mock all ports.
+Integration tests for infrastructure adapters: use real databases, brokers, and services. No mocking.
+Name tests descriptively: should_return_error_when_stock_is_insufficient, not test1.
+Organize tests in a dedicated tests module or separate test crate per layer.

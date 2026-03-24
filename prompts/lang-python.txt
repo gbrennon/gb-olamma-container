@@ -1,0 +1,33 @@
+LANGUAGE: Python
+
+TYPE SAFETY
+Use type annotations everywhere: function signatures, class attributes, return types.
+Run mypy in strict mode as part of CI. No Any types in domain or application layers.
+Avoid primitive obsession. Wrap domain concepts in dataclasses or Pydantic models with validation.
+Use NewType for lightweight domain identifiers (e.g., OrderId = NewType("OrderId", UUID)).
+Use Enum for closed sets of domain values.
+
+ABSTRACTIONS AND COMPOSITION
+Define ports as abstract base classes (ABC) or Protocols (preferred for structural typing).
+Use Protocol for port definitions when you do not want to force explicit inheritance on adapters.
+Use ABC when you want to enforce explicit contract inheritance and share default behavior.
+Inject dependencies through constructors. Never import and instantiate infrastructure inside domain or application code.
+Keep classes small and focused. Prefer composition over deep inheritance chains.
+
+ERROR HANDLING
+Never use bare except clauses. Catch specific exception types.
+Model domain errors as typed exception hierarchies or as result types (use result libraries or plain dataclasses).
+Do not use None as a sentinel for missing domain values when the absence has business meaning — model it explicitly.
+Log errors at the boundary (adapter layer), not inside domain logic.
+
+ASYNC
+Use asyncio for async work. Prefer async def consistently within an async context.
+Do not mix sync and async code silently. Use run_in_executor for blocking I/O inside async flows.
+Use structured concurrency patterns (asyncio.TaskGroup) rather than fire-and-forget tasks.
+
+TESTING
+Unit tests for domain and application: use pytest with unittest.mock or pytest-mock to stub all ports.
+Integration tests for infrastructure: use real databases and brokers (testcontainers-python). No mocking of infrastructure.
+Name tests as sentences using the should_when convention: test_should_reject_order_when_stock_is_zero.
+Use pytest fixtures for dependency setup. Avoid test interdependence.
+Enforce coverage thresholds in CI for domain and application layers.
