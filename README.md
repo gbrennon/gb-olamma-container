@@ -13,7 +13,7 @@ A terminal-centric, Docker-based infrastructure for running a local Ollama serve
 ### 1. Initial Setup
 ```bash
 # Clone and make scripts executable
-git clone <repository-url>
+git clone https://github.com/gbrennon/gb-ollama-container
 cd gb-ollama-container
 chmod +x scripts/*.sh
 
