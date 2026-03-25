@@ -2,7 +2,7 @@
 
 A terminal-centric, Docker-based infrastructure for running a local Ollama server with Open WebUI and OpenHands. This setup is optimized for senior engineering workflows with Hexagonal Architecture, TDD, and multi-language AI assistance.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Linux distribution (tested on Fedora 43 i3 spin)
@@ -40,7 +40,7 @@ docker exec -it ollama ollama list
 docker exec -it ollama ollama run eda-architecture-pro
 ```
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 This project provides a multi-model AI infrastructure with specialized capabilities:
 
@@ -61,7 +61,7 @@ This project provides a multi-model AI infrastructure with specialized capabilit
   - `eda-arch-bash`: Shell scripting standards
   - `eda-arch-actions`: GitHub Actions workflow optimization
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 gb-ollama-container/
@@ -81,7 +81,7 @@ gb-ollama-container/
 └── skills/                     # Agent capabilities
 ```
 
-## 🛠️ Management Commands
+## Management Commands
 
 ### Service Management
 | Task | Command |
@@ -116,7 +116,7 @@ open http://localhost:3000
 open http://localhost:3001
 ```
 
-## 📚 Engineering Standards
+## Engineering Standards
 
 The architecture models are built with comprehensive engineering principles:
 
@@ -139,7 +139,7 @@ Each language model includes specialized best practices:
 - **Python**: Type hints, proper exception handling, clean architecture patterns
 - **TypeScript**: Strict typing, proper async/await, functional programming patterns
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 The stack can be configured through environment variables in `docker-compose.yml`:
@@ -153,7 +153,7 @@ Ensure nvidia-container-toolkit is properly installed:
 docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
 ```
 
-## 🚨 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 1. **Models not loading**: Check GPU memory and available disk space
@@ -176,7 +176,7 @@ docker exec -it ollama ollama run eda-architecture-pro "Hello"
 docker exec -it ollama nvidia-smi
 ```
 
-## 🔄 Maintenance
+## Maintenance
 
 ### Regular Updates
 1. **Update Models**: Run `./scripts/update-models.sh` to pull latest base models
@@ -192,7 +192,7 @@ docker run --rm -v ollama_data:/data -v $(pwd):/backup busybox tar czf /backup/o
 docker run --rm -v ollama_data:/data -v $(pwd):/backup busybox tar xzf /backup/ollama-backup.tar.gz -C /
 ```
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -200,11 +200,11 @@ docker run --rm -v ollama_data:/data -v $(pwd):/backup busybox tar xzf /backup/o
 4. Ensure all scripts follow the `set -euo pipefail` standard
 5. Update documentation as needed
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Ollama for the local LLM server
 - Open WebUI for the web interface
