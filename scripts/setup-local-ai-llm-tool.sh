@@ -6,11 +6,16 @@
 
 set -euo pipefail
 
-# ── Defaults ────────────────────────────────────────────────────────────────
-OLLAMA_URL="http://localhost:11434"
-MODEL="qwen2.5-coder:7b"
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+# ── Configuration ────────────────────────────────────────────────────────────
+DEFAULT_OLLAMA_URL="http://localhost:11434"
+DEFAULT_MODEL="qwen2.5-coder:7b"
 
 # ── Argument parsing ─────────────────────────────────────────────────────────
+OLLAMA_URL="$DEFAULT_OLLAMA_URL"
+MODEL="$DEFAULT_MODEL"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --ollama-url) OLLAMA_URL="$2"; shift 2 ;;
@@ -22,39 +27,28 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-OLLAMA_URL_V1="${OLLAMA_URL}/v1"
+readonly OLLAMA_URL_V1="${OLLAMA_URL}/v1"
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-info()    { echo -e "\033[1;34m[INFO]\033[0m  $*"; }
-ok()      { echo -e "\033[1;32m[ OK ]\033[0m  $*"; }
-warn()    { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
-section() { echo -e "\n\033[1;37m──── $* ────\033[0m"; }
+# ── Preflight Checks ──────────────────────────────────────────────────────────
+verify_ollama_connectivity() {
+  log_section "Preflight"
+  log_info "Checking Ollama at $OLLAMA_URL ..."
 
-backup_file() {
-  local file="$1"
-  if [[ -f "$file" ]]; then
-    local backup="${file}.bak.$(date +%Y%m%d%H%M%S)"
-    cp "$file" "$backup"
-    warn "Backed up existing $(basename "$file") → $backup"
+  if curl -sf "${OLLAMA_URL}/api/tags" -o /dev/null; then
+    log_ok "Ollama is reachable."
+  else
+    log_warn "Ollama did not respond at $OLLAMA_URL. Continuing anyway — check your container port mapping."
   fi
 }
 
-# ── Preflight: check Ollama is reachable ─────────────────────────────────────
-section "Preflight"
-info "Checking Ollama at ${OLLAMA_URL} ..."
-if curl -sf "${OLLAMA_URL}/api/tags" -o /dev/null; then
-  ok "Ollama is reachable."
-else
-  warn "Ollama did not respond at ${OLLAMA_URL}. Continuing anyway — check your container port mapping."
-fi
+# ── Configuration Management ──────────────────────────────────────────────────
+configure_aider() {
+  log_section "aider (~/.aider.conf.yml)"
 
-# ── aider ────────────────────────────────────────────────────────────────────
-section "aider  (~/.aider.conf.yml)"
-AIDER_CONF="${HOME}/.aider.conf.yml"
+  local aider_conf="$HOME/.aider.conf.yml"
+  backup_file "$aider_conf"
 
-backup_file "$AIDER_CONF"
-
-cat > "$AIDER_CONF" <<EOF
+  local config_content=$(cat <<EOF
 # aider config — local Ollama
 # Docs: https://aider.chat/docs/config/aider_conf.html
 
@@ -62,21 +56,25 @@ model: openai/${MODEL}
 openai-api-base: ${OLLAMA_URL_V1}
 openai-api-key: ollama          # placeholder — required by the client, unused by Ollama
 EOF
+)
 
-ok "Written: ${AIDER_CONF}"
+  echo "$config_content" > "$aider_conf"
+  log_ok "Written: $aider_conf"
+}
 
-# ── opencode ─────────────────────────────────────────────────────────────────
-section "opencode  (~/.config/opencode/opencode.json)"
-OPENCODE_DIR="${HOME}/.config/opencode"
-OPENCODE_CONF="${OPENCODE_DIR}/opencode.json"
+configure_opencode() {
+  log_section "opencode (~/.config/opencode/opencode.json)"
 
-mkdir -p "$OPENCODE_DIR"
-backup_file "$OPENCODE_CONF"
+  local opencode_dir="$HOME/.config/opencode"
+  local opencode_conf="$opencode_dir/opencode.json"
 
-# Sanitise model name for JSON key (colons/dots → underscores)
-MODEL_KEY="${MODEL//[:.\/]/_}"
+  mkdir -p "$opencode_dir"
+  backup_file "$opencode_conf"
 
-cat > "$OPENCODE_CONF" <<EOF
+  # Sanitize model name for JSON key (colons/dots → underscores)
+  local model_key="${MODEL//[:.\/]/_}"
+
+  local config_content=$(cat <<EOF
 {
   "\$schema": "https://opencode.ai/config.json",
   "provider": {
@@ -96,58 +94,73 @@ cat > "$OPENCODE_CONF" <<EOF
   }
 }
 EOF
+)
 
-ok "Written: ${OPENCODE_CONF}"
-info "Inside opencode, run /models and select 'Ollama / ${MODEL}'."
+  echo "$config_content" > "$opencode_conf"
+  log_ok "Written: $opencode_conf"
+  log_info "Inside opencode, run /models and select 'Ollama / $MODEL'."
+}
 
-# ── cline ────────────────────────────────────────────────────────────────────
-section "cline  (~/.cline/data/globalState.json)"
-CLINE_STATE="${HOME}/.cline/data/globalState.json"
+configure_cline() {
+  log_section "cline (~/.cline/data/globalState.json)"
 
-if [[ ! -f "$CLINE_STATE" ]]; then
-  warn "cline globalState.json not found at ${CLINE_STATE}."
-  warn "Launch cline once to initialise it, then re-run this script."
-else
-  # Require jq
-  if ! command -v jq &>/dev/null; then
-    warn "jq not found — cannot patch cline config. Install with: sudo dnf install jq"
-  else
-    backup_file "$CLINE_STATE"
+  local cline_state="$HOME/.cline/data/globalState.json"
 
-    # Patch the relevant keys in-place
-    jq \
-      --arg url  "$OLLAMA_URL" \
-      --arg model "$MODEL" \
-      '
-        .actModeApiProvider          = "ollama" |
-        .actModeOllamaBaseUrl        = $url     |
-        .actModeOllamaModelId        = $model   |
-        .planModeApiProvider         = "ollama" |
-        .planModeOllamaBaseUrl       = $url     |
-        .planModeOllamaModelId       = $model
-      ' "$CLINE_STATE" > "${CLINE_STATE}.tmp" \
-    && mv "${CLINE_STATE}.tmp" "$CLINE_STATE"
-
-    ok "Patched: ${CLINE_STATE}"
-    info "Keys set: actModeApiProvider=ollama, actModeOllamaModelId=${MODEL}"
+  if [[ ! -f "$cline_state" ]]; then
+    log_warn "cline globalState.json not found at $cline_state."
+    log_warn "Launch cline once to initialise it, then re-run this script."
+    return 0
   fi
-fi
 
-# ── gh copilot note ──────────────────────────────────────────────────────────
-section "gh copilot"
-warn "gh copilot CLI always routes through GitHub's cloud — local models not supported. Skipped."
+  if ! require_jq; then
+    return 1
+  fi
 
-# ── Summary ──────────────────────────────────────────────────────────────────
-section "Done"
-echo ""
-echo "  Ollama URL : ${OLLAMA_URL}"
-echo "  Model      : ${MODEL}"
-echo ""
-echo "  Files written:"
-echo "    ${AIDER_CONF}"
-echo "    ${OPENCODE_CONF}"
-echo ""
-echo "  Tip: if Ollama truncates context, add a Modelfile with:"
-echo "    PARAMETER num_ctx 16384"
-echo "  and rebuild your model: ollama create mymodel -f Modelfile"
-echo ""
+  backup_file "$cline_state"
+
+  # Patch the relevant keys in-place
+  patch_json_config "$cline_state" \
+    --arg url "$OLLAMA_URL" \
+    --arg model "$MODEL" \
+    '
+      .actModeApiProvider          = "ollama" |
+      .actModeOllamaBaseUrl        = $url     |
+      .actModeOllamaModelId        = $model   |
+      .planModeApiProvider         = "ollama" |
+      .planModeOllamaBaseUrl       = $url     |
+      .planModeOllamaModelId       = $model
+    '
+
+  log_info "Keys set: actModeApiProvider=ollama, actModeOllamaModelId=$MODEL"
+}
+
+# ── Summary and Notes ─────────────────────────────────────────────────────────
+display_completion_notes() {
+  log_section "gh copilot"
+  log_warn "gh copilot CLI always routes through GitHub's cloud — local models not supported. Skipped."
+
+  log_section "Done"
+  echo ""
+  echo "  Ollama URL : $OLLAMA_URL"
+  echo "  Model      : $MODEL"
+  echo ""
+  echo "  Files written:"
+  echo "    $HOME/.aider.conf.yml"
+  echo "    $HOME/.config/opencode/opencode.json"
+  echo ""
+  echo "  Tip: if Ollama truncates context, add a Modelfile with:"
+  echo "    PARAMETER num_ctx 16384"
+  echo "  and rebuild your model: ollama create mymodel -f Modelfile"
+  echo ""
+}
+
+# ── Main Execution ────────────────────────────────────────────────────────────
+main() {
+  verify_ollama_connectivity
+  configure_aider
+  configure_opencode
+  configure_cline
+  display_completion_notes
+}
+
+main "$@"
