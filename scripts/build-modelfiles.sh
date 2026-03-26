@@ -7,16 +7,12 @@
 
 set -euo pipefail
 
-# ── Defaults ──────────────────────────────────────────────────────────────────
 SCRIPT_DIR="${0:A:h}"
-PROMPTS_DIR="${SCRIPT_DIR}/../prompts"
-MODELFILES_DIR="${SCRIPT_DIR}/../modelfiles"
-CONTAINER=""
-DRY_RUN=false
+source "$SCRIPT_DIR/lib.sh"
 
 # ── Model definitions ─────────────────────────────────────────────────────────
 # Format: "ollama-model-name|base-ollama-model|lang-prompt-filename"
-MODELS=(
+readonly MODELS=(
   "eda-arch-rust|qwen2.5-coder:32b|lang-rust.txt"
   "eda-arch-scala|qwen2.5-coder:32b|lang-scala.txt"
   "eda-arch-python|qwen2.5-coder:32b|lang-python.txt"
@@ -27,108 +23,92 @@ MODELS=(
 )
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --container) CONTAINER="$2"; shift 2 ;;
-    --dry-run)   DRY_RUN=true; shift ;;
-    -h|--help)
-      echo "Usage: $0 [--container CONTAINER_NAME] [--dry-run]"
-      exit 0 ;;
-    *) echo "Unknown option: $1"; exit 1 ;;
-  esac
-done
+DRY_RUN=false
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-info()    { echo "[INFO]  $*" }
-ok()      { echo "[ OK ]  $*" }
-warn()    { echo "[WARN]  $*" }
-section() { echo "\n──── $* ────" }
-
-ollama_cmd() {
-  if [[ -n "$CONTAINER" ]]; then
-    podman exec "$CONTAINER" ollama "$@"
-  else
-    ollama "$@"
-  fi
-}
-
-model_exists() {
-  local model="$1"
-  ollama_cmd list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qF "$model"
-}
-
-# ── Preflight ─────────────────────────────────────────────────────────────────
-section "Preflight"
-
-if [[ ! -f "${PROMPTS_DIR}/base-arch.txt" ]]; then
-  warn "Missing: prompts/base-arch.txt"
+parse_common_args CONTAINER DRY_RUN "$@" || {
+  echo "Usage: $0 [--container CONTAINER_NAME] [--dry-run]"
   exit 1
-fi
+}
 
-if [[ -n "$CONTAINER" ]]; then
-  podman inspect --format '{{.State.Running}}' "$CONTAINER" 2>/dev/null \
-    | grep -q "true" \
-    || { warn "Container '$CONTAINER' is not running."; exit 1 }
-fi
-
-mkdir -p "$MODELFILES_DIR"
-
-BASE_SYSTEM="$(< "${PROMPTS_DIR}/base-arch.txt")"
-info "Base prompt loaded ($(echo "$BASE_SYSTEM" | wc -l) lines)"
-
-# ── Build and create each model ───────────────────────────────────────────────
-section "Building models"
-
-for entry in "${MODELS[@]}"; do
-  model_name="${entry%%|*}"
-  rest="${entry#*|}"
-  base_model="${rest%%|*}"
-  lang_file="${rest##*|}"
-  lang_path="${PROMPTS_DIR}/${lang_file}"
-  modelfile_path="${MODELFILES_DIR}/${model_name}.Modelfile"
-
-  if [[ ! -f "$lang_path" ]]; then
-    warn "Missing language prompt: ${lang_path} — skipping ${model_name}"
-    continue
+# ── Preflight Checks ──────────────────────────────────────────────────────────
+validate_environment() {
+  log_section "Preflight"
+  
+  local base_prompt_file="$SCRIPT_DIR/../prompts/base-arch.txt"
+  if [[ ! -f "$base_prompt_file" ]]; then
+    log_error "Missing: prompts/base-arch.txt"
+    exit 1
   fi
+  
+  if [[ -n "$CONTAINER" ]]; then
+    require_container_running "$CONTAINER" || exit 1
+  fi
+  
+  ensure_directory "$SCRIPT_DIR/../modelfiles"
+  
+  local base_system
+  base_system="$(< "$base_prompt_file")"
+  log_info "Base prompt loaded ($(echo "$base_system" | wc -l) lines)"
+}
 
-  LANG_SYSTEM="$(< "$lang_path")"
+# ── Model Processing ──────────────────────────────────────────────────────────
+process_model_entry() {
+  local entry="$1"
+  local model_name="${entry%%|*}"
+  local rest="${entry#*|}"
+  local base_model="${rest%%|*}"
+  local lang_file="${rest##*|}"
+  local lang_path="$SCRIPT_DIR/../prompts/$lang_file"
+  local modelfile_path="$SCRIPT_DIR/../modelfiles/${model_name}.Modelfile"
+  
+  if [[ ! -f "$lang_path" ]]; then
+    log_warn "Missing language prompt: $lang_path — skipping $model_name"
+    return 0
+  fi
+  
+  assemble_modelfile "$model_name" "$base_model" "$lang_path" "$modelfile_path"
+  
+  if ! is_dry_run; then
+    create_model_from_modelfile "$model_name" "$modelfile_path"
+  else
+    log_info "[dry-run] Would create model: $model_name"
+  fi
+}
 
-  # Assemble Modelfile
+assemble_modelfile() {
+  local model_name="$1"
+  local base_model="$2"
+  local lang_prompt_file="$3"
+  local modelfile_path="$4"
+  
+  local combined_prompts
+  combined_prompts="$(load_prompts "$lang_prompt_file")"
+  
   cat > "$modelfile_path" <<MODELFILE
 FROM ${base_model}
 PARAMETER temperature 0.2
 PARAMETER seed 0
 PARAMETER num_ctx 32768
 SYSTEM """
-${BASE_SYSTEM}
-
-${LANG_SYSTEM}
+${combined_prompts}
 """
 MODELFILE
+  
+  log_info "Assembled: $modelfile_path"
+}
 
-  info "Assembled: ${modelfile_path}"
+# ── Main Execution ────────────────────────────────────────────────────────────
+main() {
+  validate_environment
+  
+  log_section "Building models"
+  
+  for entry in "${MODELS[@]}"; do
+    process_model_entry "$entry"
+  done
+  
+  log_section "Done"
+  log_info "All models built."
+}
 
-  if $DRY_RUN; then
-    info "[dry-run] Would create model: ${model_name}"
-    continue
-  fi
-
-  if model_exists "$model_name"; then
-    info "Model already exists, recreating: ${model_name}"
-    ollama_cmd rm "$model_name" 2>/dev/null || true
-  fi
-
-  info "Creating model: ${model_name}"
-  if [[ -n "$CONTAINER" ]]; then
-    podman cp "$modelfile_path" "${CONTAINER}:/tmp/${model_name}.Modelfile"
-    podman exec "$CONTAINER" ollama create "$model_name" -f "/tmp/${model_name}.Modelfile"
-  else
-    ollama create "$model_name" -f "$modelfile_path"
-  fi
-
-  ok "Created: ${model_name}"
-done
-
-section "Done"
-info "All models built."
+main "$@"

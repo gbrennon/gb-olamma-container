@@ -1,119 +1,156 @@
-#!/usr/bin/env zsh
-# bootstrap.sh - Complete automation for gb-ollama-container setup
-# Optimized for Fedora 43 / Podman environments
-# Usage: ./scripts/bootstrap.sh [--dry-run]
+#!/usr/bin/env bash
 
 set -euo pipefail
 
-SCRIPT_DIR="${0:A:h}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${SCRIPT_DIR}/.."
+source "$SCRIPT_DIR/lib.sh"
+
 DRY_RUN=false
-OLLAMA_CONTAINER="ollama"
-OLLAMA_HOST="http://localhost:11434"
 
-# ── Argument parsing ──────────────────────────────────────────────────────────
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --dry-run) DRY_RUN=true; shift ;;
-    -h|--help)
-      echo "Usage: $0 [--dry-run]"
-      exit 0 ;;
-    *) echo "Unknown option: $1"; exit 1 ;;
-  esac
-done
+usage() {
+  cat <<EOF
+Usage: $0 [OPTIONS]
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-info()    { echo -e "\033[1;34m[INFO]\033[0m  $1" }
-ok()      { echo -e "\033[1;32m[ OK ]\033[0m  $1" }
-warn()    { echo -e "\033[1;33m[WARN]\033[0m  $1" }
-section() { echo -e "\n\033[1;37m──── $1 ────\033[0m" }
+Options:
+  --dry-run       Run without making changes
+  -h, --help      Show this help message
+EOF
+}
 
-# ── 1. Preflight ──────────────────────────────────────────────────────────────
-section "Preflight"
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        DRY_RUN=true
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "Unknown option: $1"
+        usage
+        exit 1
+        ;;
+    esac
+  done
+}
 
-for cmd in podman podman-compose curl; do
-  if ! command -v "$cmd" &>/dev/null; then
-    warn "$cmd not found. Install with: sudo dnf install $cmd"
+detect_container_runtime() {
+  log_section "Container Runtime Detection"
+
+  if command -v docker &>/dev/null && docker ps >/dev/null 2>&1; then
+    CONTAINER_RUNTIME="docker"
+    COMPOSE_CMD="docker-compose"
+    log_info "Detected Docker runtime"
+  elif command -v podman &>/dev/null && podman ps >/dev/null 2>&1; then
+    CONTAINER_RUNTIME="podman"
+    COMPOSE_CMD="podman-compose"
+    log_info "Detected Podman runtime"
+  else
+    log_error "Neither Docker nor Podman is available or responsive"
+    log_info "Install Docker with: sudo dnf install docker docker-compose"
+    log_info "Or install Podman with: sudo dnf install podman podman-compose"
     exit 1
   fi
-  ok "Found $cmd"
-done
 
-# ── 2. Podman health ──────────────────────────────────────────────────────────
-section "Podman health"
+  log_info "Using $CONTAINER_RUNTIME with $COMPOSE_CMD"
+}
 
-if ! podman ps >/dev/null 2>&1; then
-  warn "Podman is not responding. Check your rootless podman setup."
-  exit 1
-fi
-ok "Podman is healthy"
+verify_prerequisites() {
+  log_section "Preflight"
 
-# ── 3. Start container stack ──────────────────────────────────────────────────
-section "Container stack"
+  if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
+    for cmd in docker docker-compose curl; do
+      require_command "$cmd" || exit 1
+    done
+  else
+    for cmd in podman podman-compose curl; do
+      require_command "$cmd" || exit 1
+    done
+  fi
 
-if $DRY_RUN; then
-  info "[dry-run] Would run: podman-compose up -d --build"
-else
-  info "Starting stack (this will also pull base models via container entrypoint)..."
-  cd "$REPO_ROOT"
-  podman-compose up -d --build
-  ok "Stack started"
-fi
+  log_section "${CONTAINER_RUNTIME^} Health Check"
 
-# ── 4. Wait for Ollama to be healthy ─────────────────────────────────────────
-section "Waiting for Ollama"
+  if ! $CONTAINER_RUNTIME ps >/dev/null 2>&1; then
+    log_error "$CONTAINER_RUNTIME is not responding. Check your setup."
+    exit 1
+  fi
+  log_ok "$CONTAINER_RUNTIME is healthy"
+}
 
-if $DRY_RUN; then
-  info "[dry-run] Would wait for Ollama at $OLLAMA_HOST"
-else
-  info "Waiting for Ollama container to be ready..."
-  RETRIES=30
-  until curl -sf "${OLLAMA_HOST}/api/tags" >/dev/null; do
-    RETRIES=$((RETRIES - 1))
-    if [[ $RETRIES -eq 0 ]]; then
-      warn "Ollama did not become healthy in time. Check: podman logs $OLLAMA_CONTAINER"
+start_container_stack() {
+  log_section "Container Stack"
+
+  dry_run_execute $COMPOSE_CMD up -d --build
+
+  if ! is_dry_run; then
+    log_ok "Stack started"
+  fi
+}
+
+wait_for_ollama_service() {
+  log_section "Waiting for Ollama"
+
+  dry_run_info "Would wait for Ollama at $OLLAMA_HOST"
+
+  if ! is_dry_run; then
+    wait_for_ollama "$OLLAMA_HOST" 30 5 || {
+      log_error "Ollama did not become healthy in time. Check: $CONTAINER_RUNTIME logs $CONTAINER"
       exit 1
-    fi
-    info "Not ready yet, retrying in 5s... ($RETRIES attempts left)"
-    sleep 5
-  done
-  ok "Ollama is healthy at $OLLAMA_HOST"
-fi
+    }
+  fi
+}
 
-# ── 5. Build and register custom models ───────────────────────────────────────
-section "Custom models"
+build_custom_models() {
+  log_section "Custom Models"
 
-BUILD_SCRIPT="${SCRIPT_DIR}/build-modelfiles.sh"
+  local build_script="$SCRIPT_DIR/build-modelfiles.sh"
 
-if [[ ! -f "$BUILD_SCRIPT" ]]; then
-  warn "build-modelfiles.sh not found at $BUILD_SCRIPT"
-  exit 1
-fi
+  if [[ ! -f "$build_script" ]]; then
+    log_error "build-modelfiles.sh not found at $build_script"
+    exit 1
+  fi
 
-chmod +x "$BUILD_SCRIPT"
+  chmod +x "$build_script"
 
-if $DRY_RUN; then
-  info "[dry-run] Would run: $BUILD_SCRIPT --container $OLLAMA_CONTAINER --dry-run"
-  "$BUILD_SCRIPT" --container "$OLLAMA_CONTAINER" --dry-run
-else
-  "$BUILD_SCRIPT" --container "$OLLAMA_CONTAINER"
-fi
+  dry_run_execute "$build_script" --container "$CONTAINER"
+}
 
-# ── 6. Summary ────────────────────────────────────────────────────────────────
-section "Done"
-ok "Bootstrap complete."
-echo ""
-info "Services:"
-echo "    Ollama API   : $OLLAMA_HOST"
-echo "    Open WebUI   : http://localhost:3000"
-echo "    OpenHands    : http://localhost:3001"
-echo ""
-info "Add to ~/.zshrc:"
-echo "    alias aider-rust='aider --model ollama/eda-arch-rust --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
-echo "    alias aider-scala='aider --model ollama/eda-arch-scala --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
-echo "    alias aider-python='aider --model ollama/eda-arch-python --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
-echo "    alias aider-ts='aider --model ollama/eda-arch-typescript --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
-echo "    alias aider-go='aider --model ollama/eda-arch-golang --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
-echo "    alias aider-bash='aider --model ollama/eda-arch-bash --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
-echo "    alias aider-actions='aider --model ollama/eda-arch-actions --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
-echo ""
+display_completion_summary() {
+  log_section "Done"
+  log_ok "Bootstrap complete."
+
+  echo ""
+  log_info "Services:"
+  echo "    Ollama API   : $OLLAMA_HOST"
+  echo "    Open WebUI   : http://localhost:3000"
+  echo "    OpenHands    : http://localhost:3001"
+  echo ""
+  log_info "Add to ~/.zshrc:"
+  echo "    alias aider-rust='aider --model ollama/eda-arch-rust --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
+  echo "    alias aider-scala='aider --model ollama/eda-arch-scala --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
+  echo "    alias aider-python='aider --model ollama/eda-arch-python --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
+  echo "    alias aider-ts='aider --model ollama/eda-arch-typescript --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
+  echo "    alias aider-go='aider --model ollama/eda-arch-golang --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
+  echo "    alias aider-bash='aider --model ollama/eda-arch-bash --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
+  echo "    alias aider-actions='aider --model ollama/eda-arch-actions --openai-api-base $OLLAMA_HOST/v1 --auto-commits false'"
+  echo ""
+}
+
+main() {
+  parse_args "$@"
+
+  cd "$REPO_ROOT"
+
+  detect_container_runtime
+  verify_prerequisites
+  start_container_stack
+  wait_for_ollama_service
+  build_custom_models
+  display_completion_summary
+}
+
+main "$@"
