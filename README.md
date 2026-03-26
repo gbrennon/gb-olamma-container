@@ -18,7 +18,7 @@ cd gb-ollama-container
 chmod +x scripts/*.sh
 
 # Build and start the stack
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 ### 2. Configure Host CLI Tools
@@ -31,7 +31,7 @@ source ~/.zshrc
 ### 3. Verify Installation
 ```bash
 # Check if services are running
-docker-compose ps
+docker compose ps
 
 # List available models
 docker exec -it ollama ollama list
@@ -110,9 +110,15 @@ aider-arch <path_to_your_code>
 ollama run eda-arch-rust
 
 # Test with Open WebUI
+# Linux Distros
+xdg-open http://localhost:3000
+# MacOS
 open http://localhost:3000
 
 # Use OpenHands for coding assistance
+# Linux Distros
+xdg-open http://localhost:3001
+# MacOS
 open http://localhost:3001
 ```
 
@@ -164,10 +170,10 @@ docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
 ### Debug Commands
 ```bash
 # Check service status
-docker-compose ps
+docker compose ps
 
 # View detailed logs
-docker-compose logs --tail=100 -f
+docker compose logs --tail=100 -f
 
 # Test model availability
 docker exec -it ollama ollama run eda-architecture-pro "Hello"
