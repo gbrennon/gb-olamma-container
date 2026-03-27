@@ -38,17 +38,29 @@ parse_args() {
   done
 }
 
-detect_container_runtime() {
-  log_section "Container Runtime Detection"
-
+detect_compose_tool() {
   if command -v docker &>/dev/null && docker ps >/dev/null 2>&1; then
     CONTAINER_RUNTIME="docker"
-    COMPOSE_CMD="docker-compose"
-    log_info "Detected Docker runtime"
+    if docker compose version &>/dev/null; then
+      COMPOSE_CMD="docker compose"
+    elif command -v docker-compose &>/dev/null; then
+      COMPOSE_CMD="docker-compose"
+    else
+      log_error "Docker is available but neither 'docker compose' nor 'docker-compose' is installed"
+      log_info "Install docker-compose with: sudo dnf install docker-compose"
+      exit 1
+    fi
   elif command -v podman &>/dev/null && podman ps >/dev/null 2>&1; then
     CONTAINER_RUNTIME="podman"
-    COMPOSE_CMD="podman-compose"
-    log_info "Detected Podman runtime"
+    if podman compose version &>/dev/null; then
+      COMPOSE_CMD="podman compose"
+    elif command -v podman-compose &>/dev/null; then
+      COMPOSE_CMD="podman-compose"
+    else
+      log_error "Podman is available but neither 'podman compose' nor 'podman-compose' is installed"
+      log_info "Install podman-compose with: sudo dnf install podman-compose"
+      exit 1
+    fi
   else
     log_error "Neither Docker nor Podman is available or responsive"
     log_info "Install Docker with: sudo dnf install docker docker-compose"
@@ -56,21 +68,17 @@ detect_container_runtime() {
     exit 1
   fi
 
-  log_info "Using $CONTAINER_RUNTIME with $COMPOSE_CMD"
+  log_info "Detected $CONTAINER_RUNTIME runtime"
+  log_info "Using compose: $COMPOSE_CMD"
 }
 
 verify_prerequisites() {
-  log_section "Preflight"
+  log_section "Prerequisites Check"
 
-  if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
-    for cmd in docker docker-compose curl; do
-      require_command "$cmd" || exit 1
-    done
-  else
-    for cmd in podman podman-compose curl; do
-      require_command "$cmd" || exit 1
-    done
-  fi
+  local required_cmds=("$CONTAINER_RUNTIME" "curl")
+  for cmd in "${required_cmds[@]}"; do
+    require_command "$cmd" || exit 1
+  done
 
   log_section "${CONTAINER_RUNTIME^} Health Check"
 
@@ -145,11 +153,10 @@ main() {
 
   cd "$REPO_ROOT"
 
-  detect_container_runtime
+  detect_compose_tool
   verify_prerequisites
   start_container_stack
   wait_for_ollama_service
-  build_custom_models
   display_completion_summary
 }
 
